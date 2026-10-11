@@ -168,6 +168,38 @@ class FinanceProvider extends ChangeNotifier {
     );
   }
 
+  /// Добавление нового счета
+  Future<bool> addAccount({
+    required String name,
+    required double initialBalance,
+    required int colorHex,
+    required String iconName,
+    String currency = 'RUB',
+  }) async {
+    try {
+      final now = DateTime.now();
+      final account = Account(
+        id: _uuid.v4(),
+        name: name,
+        balance: initialBalance,
+        currency: currency,
+        colorHex: colorHex,
+        iconName: iconName,
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      await _repository.addAccount(account);
+      await _refreshData();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Ошибка при создании счета: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Принудительное обновление состояния
   Future<void> refresh() async {
     await _refreshData();
