@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:where_my_money/core/utils/currency_formatter.dart';
 import 'package:where_my_money/core/utils/date_formatter.dart';
+import 'package:where_my_money/core/utils/receipt_qr_parser.dart';
 import 'package:where_my_money/data/models/account.dart';
 import 'package:where_my_money/data/models/category.dart';
 import 'package:where_my_money/data/models/transaction_item.dart';
@@ -94,6 +95,38 @@ void main() {
       final today = DateTime.now();
       final header = DateFormatter.formatDayHeader(today);
       expect(header.startsWith('Сегодня'), isTrue);
+    });
+  });
+
+  group('ReceiptQrParser Tests', () {
+    test('Parses Russian FNS fiscal QR string correctly', () {
+      const qr = 't=20261012T143000&s=1240.50&fn=9960440300123456&i=15243&fp=3857291023&n=1';
+      final parsed = ReceiptQrParser.parse(qr);
+
+      expect(parsed, isNotNull);
+      expect(parsed!.amount, 1240.50);
+      expect(parsed.isFiscal, isTrue);
+      expect(parsed.fn, '9960440300123456');
+      expect(parsed.fd, '15243');
+      expect(parsed.fp, '3857291023');
+      expect(parsed.date.year, 2026);
+      expect(parsed.date.month, 10);
+      expect(parsed.date.day, 12);
+      expect(parsed.date.hour, 14);
+      expect(parsed.date.minute, 30);
+    });
+
+    test('Parses QR with comma as decimal separator', () {
+      const qr = 't=20261012T1000&s=350,90&fn=111&i=222&fp=333';
+      final parsed = ReceiptQrParser.parse(qr);
+
+      expect(parsed, isNotNull);
+      expect(parsed!.amount, 350.90);
+    });
+
+    test('Returns null on empty or non-receipt string', () {
+      expect(ReceiptQrParser.parse(''), isNull);
+      expect(ReceiptQrParser.parse('hello world'), isNull);
     });
   });
 }
