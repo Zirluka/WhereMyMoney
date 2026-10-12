@@ -1,7 +1,10 @@
 import 'package:sqflite/sqflite.dart';
+import 'package:uuid/uuid.dart';
 import '../database/app_database.dart';
 import '../models/account.dart';
+import '../models/budget.dart';
 import '../models/category.dart';
+import '../models/savings_goal.dart';
 import '../models/transaction_item.dart';
 
 class FinanceRepository {
@@ -382,5 +385,180 @@ class FinanceRepository {
         'totalAmount': (row['total_amount'] as num).toDouble(),
       };
     }).toList();
+  }
+
+  // ================= БЮДЖЕТЫ И ЛИМИТЫ (ФАЗА 7) =================
+
+  /// Получение бюджетов с расчетом текущего прогресса расхода за месяц
+  Future<List<BudgetProgress>> getBudgetsWithProgress({
+    required int year,
+    required int month,
+  }) async {
+    final db = await _db;
+    final startDate = DateTime(year, month, 1).toIso8601String();
+    final endDate = DateTime(year, month + 1, 0, 23, 59, 59).toIso8601String();
+
+    // 1. Получаем все активные бюджеты с категориями
+    final query = '''
+      SELECT 
+        b.*,
+        c.name as category_name,
+        c.icon_name as category_icon,
+        c.color_hex as category_color
+      FROM budgets b
+      JOIN categories c ON b.category_id = c.id
+      WHERE b.is_deleted = 0
+        AND (b.period_month = 0 OR (b.period_month = ? AND b.period_year = ?))
+      ORDER BY b.amount DESC
+    ''';
+
+    final results = await db.rawQuery(query, [month, year]);
+    final budgets = results.map((row) => Budget.fromMap(row)).toList();
+
+    // 2. Для каждого бюджета вычисляем потраченную сумму в этом месяце
+    final List<BudgetProgress> progressList = [];
+    for (final budget in budgets) {
+      final spentResult = await db.rawQuery('''
+        SELECT SUM(amount) as spent
+        FROM transactions
+        WHERE category_id = ?
+          AND type = 'expense'
+          AND is_deleted = 0
+          AND date >= ?
+          AND date <= ?
+      ''', [budget.categoryId, startDate, endDate]);
+
+      final spent = (spentResult.first['spent'] as num?)?.toDouble() ?? 0.0;
+      progressList.add(BudgetProgress(
+        budget: budget,
+        spentAmount: spent,
+      ));
+    }
+
+    // Сортируем: сначала те, где процент расхода выше (превышенные или предупреждающие)
+    progressList.sort((a, b) => b.percent.compareTo(a.percent));
+    return progressList;
+  }
+
+  /// Установка или обновление месячного лимита на категорию
+  Future<void> setBudget({
+    required String categoryId,
+    required double amount,
+    int periodMonth = 0,
+    int periodYear = 0,
+  }) async {
+    final db = await _db;
+    final existing = await db.query(
+      'budgets',
+      where: 'category_id = ? AND period_month = ? AND period_year = ? AND is_deleted = 0',
+      whereArgs: [categoryId, periodMonth, periodYear],
+      limit: 1,
+    );
+
+    final now = DateTime.now().toIso8601String();
+    if (existing.isNotEmpty) {
+      final id = existing.first['id'] as String;
+      await db.update(
+        'budgets',
+        {
+          'amount': amount,
+          'updated_at': now,
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    } else {
+      const uuid = Uuid();
+      await db.insert('budgets', {
+        'id': uuid.v4(),
+        'category_id': categoryId,
+        'amount': amount,
+        'period_month': periodMonth,
+        'period_year': periodYear,
+        'created_at': now,
+        'updated_at': now,
+        'is_deleted': 0,
+      });
+    }
+  }
+
+  /// Удаление бюджета
+  Future<void> deleteBudget(String budgetId) async {
+    final db = await _db;
+    final now = DateTime.now().toIso8601String();
+    await db.update(
+      'budgets',
+      {'is_deleted': 1, 'updated_at': now},
+      where: 'id = ?',
+      whereArgs: [budgetId],
+    );
+  }
+
+  // ================= ФИНАНСОВЫЕ ЦЕЛИ И КОПИЛКИ (ФАЗА 7) =================
+
+  /// Получение всех активных целей
+  Future<List<SavingsGoal>> getSavingsGoals() async {
+    final db = await _db;
+    final results = await db.query(
+      'savings_goals',
+      where: 'is_deleted = 0',
+      orderBy: 'created_at ASC',
+    );
+    return results.map((row) => SavingsGoal.fromMap(row)).toList();
+  }
+
+  /// Добавление новой цели
+  Future<void> addSavingsGoal(SavingsGoal goal) async {
+    final db = await _db;
+    await db.insert('savings_goals', goal.toMap());
+  }
+
+  /// Обновление цели
+  Future<void> updateSavingsGoal(SavingsGoal goal) async {
+    final db = await _db;
+    await db.update(
+      'savings_goals',
+      goal.copyWith(updatedAt: DateTime.now()).toMap(),
+      where: 'id = ?',
+      whereArgs: [goal.id],
+    );
+  }
+
+  /// Пополнение копилки (с опциональным списанием со счета)
+  Future<void> addFundsToGoal(
+    String goalId,
+    double amount, {
+    String? accountId,
+  }) async {
+    final db = await _db;
+    await db.transaction((txn) async {
+      final now = DateTime.now().toIso8601String();
+
+      // 1. Увеличиваем баланс цели
+      await txn.rawUpdate(
+        'UPDATE savings_goals SET current_amount = current_amount + ?, updated_at = ? WHERE id = ?',
+        [amount, now, goalId],
+      );
+
+      // 2. Если указан счет списания, уменьшаем его баланс
+      if (accountId != null) {
+        await txn.rawUpdate(
+          'UPDATE accounts SET balance = balance - ?, updated_at = ? WHERE id = ?',
+          [amount, now, accountId],
+        );
+      }
+    });
+  }
+
+  /// Удаление цели
+  Future<void> deleteSavingsGoal(String goalId) async {
+    final db = await _db;
+    final now = DateTime.now().toIso8601String();
+    await db.update(
+      'savings_goals',
+      {'is_deleted': 1, 'updated_at': now},
+      where: 'id = ?',
+      whereArgs: [goalId],
+    );
   }
 }

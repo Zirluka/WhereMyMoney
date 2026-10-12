@@ -24,6 +24,7 @@ void main() {
     // Проверяем наличие элементов нижней навигации
     expect(find.text('Обзор'), findsOneWidget);
     expect(find.text('Аналитика'), findsOneWidget);
+    expect(find.text('Бюджеты'), findsOneWidget);
     expect(find.text('Счета'), findsOneWidget);
 
     // Проверяем наличие плавающей кнопки добавления

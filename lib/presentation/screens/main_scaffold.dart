@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../core/theme/app_colors.dart';
+import 'package:where_my_money/core/theme/app_colors.dart';
 import 'accounts_screen.dart';
 import 'add_transaction_sheet.dart';
 import 'analytics_screen.dart';
+import 'budgets_and_goals_screen.dart';
 import 'dashboard_screen.dart';
 
 class MainScaffold extends StatefulWidget {
@@ -19,6 +20,7 @@ class _MainScaffoldState extends State<MainScaffold> {
   final List<Widget> _screens = const [
     DashboardScreen(),
     AnalyticsScreen(),
+    BudgetsAndGoalsScreen(),
     AccountsScreen(),
   ];
 
@@ -46,6 +48,7 @@ class _MainScaffoldState extends State<MainScaffold> {
           ),
         ),
         child: BottomNavigationBar(
+          type: BottomNavigationBarType.fixed,
           currentIndex: _currentIndex,
           onTap: _onTabSelected,
           items: const [
@@ -58,6 +61,11 @@ class _MainScaffoldState extends State<MainScaffold> {
               icon: Icon(Icons.pie_chart_outline_rounded),
               activeIcon: Icon(Icons.pie_chart_rounded),
               label: 'Аналитика',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.savings_outlined),
+              activeIcon: Icon(Icons.savings_rounded),
+              label: 'Бюджеты',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.credit_card_outlined),

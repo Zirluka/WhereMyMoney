@@ -39,8 +39,9 @@ class AppDatabase {
 
     return await openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
   }
 
@@ -101,6 +102,10 @@ class AppDatabase {
     await db.execute('CREATE INDEX idx_transactions_category ON transactions (category_id);');
     await db.execute('CREATE INDEX idx_transactions_is_deleted ON transactions (is_deleted);');
 
+    // Таблицы бюджетов и целей (Фаза 7)
+    await _createBudgetsTable(db);
+    await _createSavingsGoalsTable(db);
+
     // Сидирование начальных данных
     final batch = db.batch();
     for (final account in InitialData.getDefaultAccounts()) {
@@ -110,6 +115,49 @@ class AppDatabase {
       batch.insert('categories', category.toMap());
     }
     await batch.commit(noResult: true);
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await _createBudgetsTable(db);
+      await _createSavingsGoalsTable(db);
+    }
+  }
+
+  Future<void> _createBudgetsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS budgets (
+        id TEXT PRIMARY KEY,
+        category_id TEXT NOT NULL,
+        amount REAL NOT NULL,
+        period_month INTEGER NOT NULL DEFAULT 0,
+        period_year INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (category_id) REFERENCES categories (id)
+      );
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_budgets_category ON budgets (category_id);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_budgets_is_deleted ON budgets (is_deleted);');
+  }
+
+  Future<void> _createSavingsGoalsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS savings_goals (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        target_amount REAL NOT NULL,
+        current_amount REAL NOT NULL DEFAULT 0.0,
+        target_date TEXT,
+        icon_name TEXT NOT NULL,
+        color_hex INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER NOT NULL DEFAULT 0
+      );
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_savings_goals_is_deleted ON savings_goals (is_deleted);');
   }
 
   Future<void> close() async {

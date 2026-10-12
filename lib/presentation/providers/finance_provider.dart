@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart' hide Category;
 import 'package:uuid/uuid.dart';
 import '../../data/models/account.dart';
+import '../../data/models/budget.dart';
 import '../../data/models/category.dart';
+import '../../data/models/savings_goal.dart';
 import '../../data/models/transaction_item.dart';
 import '../../data/repositories/finance_repository.dart';
 
@@ -12,6 +14,8 @@ class FinanceProvider extends ChangeNotifier {
   List<Account> _accounts = [];
   List<Category> _categories = [];
   List<TransactionItem> _recentTransactions = [];
+  List<BudgetProgress> _budgets = [];
+  List<SavingsGoal> _goals = [];
 
   Account? _selectedAccount;
   double _totalBalance = 0.0;
@@ -31,6 +35,18 @@ class FinanceProvider extends ChangeNotifier {
   List<Category> get incomeCategories =>
       _categories.where((c) => c.isIncome).toList();
   List<TransactionItem> get recentTransactions => _recentTransactions;
+  List<BudgetProgress> get budgets => _budgets;
+  List<SavingsGoal> get goals => _goals;
+  int get warningBudgetsCount =>
+      _budgets.where((b) => b.isWarning || b.isExceeded).length;
+  double get totalBudgetLimit =>
+      _budgets.fold(0.0, (sum, b) => sum + b.limitAmount);
+  double get totalBudgetSpent =>
+      _budgets.fold(0.0, (sum, b) => sum + b.spentAmount);
+  double get totalGoalsTarget =>
+      _goals.fold(0.0, (sum, g) => sum + g.targetAmount);
+  double get totalGoalsCurrent =>
+      _goals.fold(0.0, (sum, g) => sum + g.currentAmount);
   Account? get selectedAccount => _selectedAccount;
   double get totalBalance => _totalBalance;
   double get monthlyExpense => _monthlyExpense;
@@ -87,6 +103,13 @@ class FinanceProvider extends ChangeNotifier {
     );
     _monthlyExpense = summary['expense'] ?? 0.0;
     _monthlyIncome = summary['income'] ?? 0.0;
+
+    // 6. Бюджеты и цели (Фаза 7)
+    _budgets = await _repository.getBudgetsWithProgress(
+      year: now.year,
+      month: now.month,
+    );
+    _goals = await _repository.getSavingsGoals();
   }
 
   /// Выбор фильтра по счету
@@ -330,6 +353,129 @@ class FinanceProvider extends ChangeNotifier {
       accountId: accountId,
       limit: limit,
     );
+  }
+
+  // ================= МЕТОДЫ БЮДЖЕТОВ И ЦЕЛЕЙ (ФАЗА 7) =================
+
+  /// Установка или обновление месячного лимита на категорию
+  Future<bool> setBudget({
+    required String categoryId,
+    required double amount,
+    int periodMonth = 0,
+    int periodYear = 0,
+  }) async {
+    try {
+      await _repository.setBudget(
+        categoryId: categoryId,
+        amount: amount,
+        periodMonth: periodMonth,
+        periodYear: periodYear,
+      );
+      await _refreshData();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Ошибка установки бюджета: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Удаление бюджета
+  Future<bool> deleteBudget(String budgetId) async {
+    try {
+      await _repository.deleteBudget(budgetId);
+      await _refreshData();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Ошибка удаления бюджета: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Добавление цели (копилки)
+  Future<bool> addSavingsGoal({
+    required String name,
+    required double targetAmount,
+    double currentAmount = 0.0,
+    DateTime? targetDate,
+    required String iconName,
+    required int colorHex,
+  }) async {
+    try {
+      final now = DateTime.now();
+      final goal = SavingsGoal(
+        id: _uuid.v4(),
+        name: name,
+        targetAmount: targetAmount,
+        currentAmount: currentAmount,
+        targetDate: targetDate,
+        iconName: iconName,
+        colorHex: colorHex,
+        createdAt: now,
+        updatedAt: now,
+      );
+      await _repository.addSavingsGoal(goal);
+      await _refreshData();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Ошибка добавления цели: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Обновление цели
+  Future<bool> updateSavingsGoal(SavingsGoal goal) async {
+    try {
+      await _repository.updateSavingsGoal(goal);
+      await _refreshData();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Ошибка обновления цели: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Пополнение копилки
+  Future<bool> addFundsToGoal(
+    String goalId,
+    double amount, {
+    String? accountId,
+  }) async {
+    try {
+      await _repository.addFundsToGoal(
+        goalId,
+        amount,
+        accountId: accountId,
+      );
+      await _refreshData();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Ошибка пополнения цели: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Удаление цели
+  Future<bool> deleteSavingsGoal(String goalId) async {
+    try {
+      await _repository.deleteSavingsGoal(goalId);
+      await _refreshData();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Ошибка удаления цели: $e';
+      notifyListeners();
+      return false;
+    }
   }
 
   /// Принудительное обновление состояния
