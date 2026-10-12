@@ -39,7 +39,7 @@ class AppDatabase {
 
     return await openDatabase(
       dbPath,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -106,6 +106,9 @@ class AppDatabase {
     await _createBudgetsTable(db);
     await _createSavingsGoalsTable(db);
 
+    // Таблица настроек и безопасности (Фаза 9)
+    await _createAppSettingsTable(db);
+
     // Сидирование начальных данных
     final batch = db.batch();
     for (final account in InitialData.getDefaultAccounts()) {
@@ -122,6 +125,18 @@ class AppDatabase {
       await _createBudgetsTable(db);
       await _createSavingsGoalsTable(db);
     }
+    if (oldVersion < 3) {
+      await _createAppSettingsTable(db);
+    }
+  }
+
+  Future<void> _createAppSettingsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+    ''');
   }
 
   Future<void> _createBudgetsTable(Database db) async {

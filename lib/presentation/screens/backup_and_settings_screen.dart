@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:where_my_money/core/theme/app_colors.dart';
 import '../providers/finance_provider.dart';
+import '../providers/security_provider.dart';
+import '../widgets/security/set_pin_dialog.dart';
 
 class BackupAndSettingsScreen extends StatelessWidget {
   const BackupAndSettingsScreen({super.key});
@@ -70,7 +72,13 @@ class BackupAndSettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          // 5. ОПАСНАЯ ЗОНА
+          // 5. БЕЗОПАСНОСТЬ И ВХОД (ФАЗА 9)
+          _buildSectionHeader('Безопасность и защита данных'),
+          const SizedBox(height: 12),
+          _buildSecurityCard(context),
+          const SizedBox(height: 24),
+
+          // 6. ОПАСНАЯ ЗОНА
           _buildSectionHeader('Управление данными'),
           const SizedBox(height: 12),
           _buildDangerCard(
@@ -375,7 +383,7 @@ class BackupAndSettingsScreen extends StatelessWidget {
           ),
           SizedBox(height: 4),
           Text(
-            'Локальная база данных SQLite v2 • Полный контроль пользователя',
+            'Локальная база данных SQLite v3 • Полный контроль пользователя',
             style: TextStyle(
               fontSize: 11,
               color: AppColors.darkTextMuted,
@@ -384,6 +392,204 @@ class BackupAndSettingsScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _buildSecurityCard(BuildContext context) {
+    final security = context.watch<SecurityProvider>();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.darkCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.darkBorder),
+      ),
+      child: Column(
+        children: [
+          // Тумблер или кнопка PIN-кода
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: (security.isPinEnabled ? AppColors.primary : AppColors.darkTextMuted)
+                    .withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                Icons.pin_outlined,
+                color: security.isPinEnabled ? AppColors.primary : AppColors.darkTextMuted,
+                size: 22,
+              ),
+            ),
+            title: Text(
+              security.isPinEnabled ? 'PIN-код включен' : 'Защита PIN-кодом',
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              security.isPinEnabled
+                  ? 'Приложение запрашивает 4-значный код при входе'
+                  : 'Установите 4-значный код для защиты от посторонних',
+              style: const TextStyle(fontSize: 12, color: AppColors.darkTextSecondary),
+            ),
+            trailing: security.isPinEnabled
+                ? PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert_rounded, color: AppColors.darkTextSecondary),
+                    onSelected: (action) async {
+                      if (action == 'change') {
+                        final changed = await SetPinDialog.show(context);
+                        if (changed == true && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('PIN-код успешно изменен')),
+                          );
+                        }
+                      } else if (action == 'remove') {
+                        _confirmRemovePin(context, security);
+                      }
+                    },
+                    itemBuilder: (ctx) => [
+                      const PopupMenuItem(
+                        value: 'change',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit_outlined, size: 20),
+                            SizedBox(width: 10),
+                            Text('Сменить PIN'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'remove',
+                        child: Row(
+                          children: [
+                            Icon(Icons.lock_open_rounded, size: 20, color: AppColors.expense),
+                            SizedBox(width: 10),
+                            Text('Отключить защиту', style: TextStyle(color: AppColors.expense)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                : TextButton(
+                    onPressed: () async {
+                      final set = await SetPinDialog.show(context);
+                      if (set == true && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('PIN-код успешно установлен!')),
+                        );
+                      }
+                    },
+                    child: const Text('Включить'),
+                  ),
+          ),
+
+          const Divider(height: 1, indent: 16, endIndent: 16, color: AppColors.darkBorder),
+
+          // Тумблер биометрии
+          SwitchListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            secondary: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: (security.isBiometricsEnabled ? AppColors.income : AppColors.darkTextMuted)
+                    .withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                Icons.fingerprint_rounded,
+                color: security.isBiometricsEnabled ? AppColors.income : AppColors.darkTextMuted,
+                size: 22,
+              ),
+            ),
+            title: const Text(
+              'Вход по биометрии',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              security.isBiometricsAvailable
+                  ? 'Отпечаток пальца или Face ID для быстрого входа'
+                  : 'Биометрия не поддерживается на этом устройстве',
+              style: const TextStyle(fontSize: 12, color: AppColors.darkTextSecondary),
+            ),
+            value: security.isBiometricsEnabled,
+            activeThumbColor: AppColors.income,
+            onChanged: (security.isPinEnabled && security.isBiometricsAvailable)
+                ? (val) => security.toggleBiometrics(val)
+                : null,
+          ),
+
+          if (security.isPinEnabled) ...[
+            const Divider(height: 1, indent: 16, endIndent: 16, color: AppColors.darkBorder),
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              leading: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.lock_clock_outlined,
+                  color: AppColors.warning,
+                  size: 22,
+                ),
+              ),
+              title: const Text(
+                'Заблокировать сейчас',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text(
+                'Мгновенно заблокировать экран приложения',
+                style: TextStyle(fontSize: 12, color: AppColors.darkTextSecondary),
+              ),
+              trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.darkTextMuted),
+              onTap: () {
+                HapticFeedback.mediumImpact();
+                security.lockApp();
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmRemovePin(BuildContext context, SecurityProvider security) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.darkSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Отключить PIN-код?'),
+        content: const Text(
+          'Защита приложения будет отключена, включая вход по биометрии.',
+          style: TextStyle(color: AppColors.darkTextSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.expense),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Отключить'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await security.removePin();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Защита PIN-кодом отключена')),
+        );
+      }
+    }
   }
 
   // ================= ОБРАБОТЧИКИ ДЕЙСТВИЙ =================

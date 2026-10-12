@@ -10,6 +10,7 @@ import 'package:where_my_money/data/models/category.dart';
 import 'package:where_my_money/data/models/savings_goal.dart';
 import 'package:where_my_money/data/models/transaction_item.dart';
 import 'package:where_my_money/presentation/providers/finance_provider.dart';
+import 'package:where_my_money/presentation/providers/security_provider.dart';
 import 'package:where_my_money/presentation/screens/backup_and_settings_screen.dart';
 
 void main() {
@@ -139,10 +140,14 @@ void main() {
       addTearDown(() => tester.view.resetPhysicalSize());
 
       final provider = FinanceProvider();
+      final security = SecurityProvider();
 
       await tester.pumpWidget(
-        ChangeNotifierProvider<FinanceProvider>.value(
-          value: provider,
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<FinanceProvider>.value(value: provider),
+            ChangeNotifierProvider<SecurityProvider>.value(value: security),
+          ],
           child: MaterialApp(
             theme: AppTheme.darkTheme,
             home: const BackupAndSettingsScreen(),
@@ -185,10 +190,14 @@ void main() {
       addTearDown(() => tester.view.resetPhysicalSize());
 
       final provider = FinanceProvider();
+      final security = SecurityProvider();
 
       await tester.pumpWidget(
-        ChangeNotifierProvider<FinanceProvider>.value(
-          value: provider,
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<FinanceProvider>.value(value: provider),
+            ChangeNotifierProvider<SecurityProvider>.value(value: security),
+          ],
           child: MaterialApp(
             theme: AppTheme.darkTheme,
             home: const BackupAndSettingsScreen(),
@@ -214,10 +223,14 @@ void main() {
       addTearDown(() => tester.view.resetPhysicalSize());
 
       final provider = FinanceProvider();
+      final security = SecurityProvider();
 
       await tester.pumpWidget(
-        ChangeNotifierProvider<FinanceProvider>.value(
-          value: provider,
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<FinanceProvider>.value(value: provider),
+            ChangeNotifierProvider<SecurityProvider>.value(value: security),
+          ],
           child: MaterialApp(
             theme: AppTheme.darkTheme,
             home: const BackupAndSettingsScreen(),
