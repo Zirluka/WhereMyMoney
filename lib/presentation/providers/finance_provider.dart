@@ -157,7 +157,20 @@ class FinanceProvider extends ChangeNotifier {
     }
   }
 
-  /// Получение расходов по категориям за период (для графиков аналитики)
+  /// Получение сводки по категориям за период (расходы или доходы)
+  Future<List<Map<String, dynamic>>> getCategorySummary({
+    required DateTime startDate,
+    required DateTime endDate,
+    String type = 'expense',
+  }) async {
+    return await _repository.getCategorySummary(
+      startDate: startDate,
+      endDate: endDate,
+      type: type,
+    );
+  }
+
+  /// Получение расходов по категориям за период (обратная совместимость)
   Future<List<Map<String, dynamic>>> getCategoryExpensesSummary({
     required DateTime startDate,
     required DateTime endDate,
@@ -165,6 +178,30 @@ class FinanceProvider extends ChangeNotifier {
     return await _repository.getCategoryExpensesSummary(
       startDate: startDate,
       endDate: endDate,
+    );
+  }
+
+  /// Получение сводки за произвольный период (доходы, расходы, количество)
+  Future<Map<String, dynamic>> getPeriodSummary({
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    return await _repository.getPeriodSummary(
+      startDate: startDate,
+      endDate: endDate,
+    );
+  }
+
+  /// Получение ежедневной динамики за период
+  Future<List<Map<String, dynamic>>> getDailyDynamics({
+    required DateTime startDate,
+    required DateTime endDate,
+    String type = 'expense',
+  }) async {
+    return await _repository.getDailyDynamics(
+      startDate: startDate,
+      endDate: endDate,
+      type: type,
     );
   }
 

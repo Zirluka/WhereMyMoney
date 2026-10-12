@@ -95,4 +95,27 @@ class DateFormatter {
     final monthName = _monthsNominative[date.month - 1];
     return '$monthName ${date.year}';
   }
+
+  /// Короткий формат дня и месяца ("12 окт")
+  static String formatShortDayMonth(DateTime date) {
+    const shortMonths = [
+      'янв', 'фев', 'мар', 'апр', 'май', 'июн',
+      'июл', 'авг', 'сен', 'окт', 'ноя', 'дек',
+    ];
+    return '${date.day} ${shortMonths[date.month - 1]}';
+  }
+
+  /// Форматирование диапазона дат для периода
+  static String formatDateRange(DateTime start, DateTime end) {
+    if (start.year == end.year && start.month == end.month && start.day == end.day) {
+      return '${start.day} ${_monthsGenitive[start.month - 1]} ${start.year}';
+    }
+    if (start.year == end.year && start.month == end.month) {
+      return '${start.day} — ${end.day} ${_monthsGenitive[start.month - 1]} ${start.year}';
+    }
+    if (start.year == end.year) {
+      return '${start.day} ${_monthsGenitive[start.month - 1]} — ${end.day} ${_monthsGenitive[end.month - 1]} ${start.year}';
+    }
+    return '${start.day} ${_monthsGenitive[start.month - 1]} ${start.year} — ${end.day} ${_monthsGenitive[end.month - 1]} ${end.year}';
+  }
 }

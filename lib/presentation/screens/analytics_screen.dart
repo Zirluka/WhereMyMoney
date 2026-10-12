@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/utils/currency_formatter.dart';
-import '../../core/utils/date_formatter.dart';
-import '../../core/utils/icon_helper.dart';
+import 'package:where_my_money/core/theme/app_colors.dart';
 import '../providers/finance_provider.dart';
+import '../widgets/analytics/analytics_bar_chart.dart';
+import '../widgets/analytics/analytics_period.dart';
+import '../widgets/analytics/analytics_period_selector.dart';
+import '../widgets/analytics/analytics_pie_chart.dart';
+import '../widgets/analytics/analytics_summary_card.dart';
+import '../widgets/analytics/category_ranking_list.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
@@ -14,287 +17,243 @@ class AnalyticsScreen extends StatefulWidget {
 }
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
+  AnalyticsPeriodType _periodType = AnalyticsPeriodType.month;
+  int _offset = 0;
+  DateTime? _customStartDate;
+  DateTime? _customEndDate;
+  String _transactionType = 'expense'; // 'expense' or 'income'
+
   List<Map<String, dynamic>> _categorySummary = [];
+  List<Map<String, dynamic>> _dailyDynamics = [];
+  Map<String, dynamic> _periodSummary = {
+    'expense': 0.0,
+    'income': 0.0,
+    'count': 0,
+  };
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadSummary();
+    _loadAnalytics();
   }
 
-  Future<void> _loadSummary() async {
-    final now = DateTime.now();
-    final startDate = DateTime(now.year, now.month, 1);
-    final endDate = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+  AnalyticsDateRange _getCurrentDateRange() {
+    return AnalyticsDateRange.fromType(
+      type: _periodType,
+      offset: _offset,
+      customStart: _customStartDate,
+      customEnd: _customEndDate,
+    );
+  }
 
+  Future<void> _loadAnalytics() async {
     final provider = context.read<FinanceProvider>();
-    final summary = await provider.getCategoryExpensesSummary(
-      startDate: startDate,
-      endDate: endDate,
+    final range = _getCurrentDateRange();
+
+    setState(() => _isLoading = true);
+
+    try {
+      final summaryFuture = provider.getCategorySummary(
+        startDate: range.startDate,
+        endDate: range.endDate,
+        type: _transactionType,
+      );
+
+      final periodSummaryFuture = provider.getPeriodSummary(
+        startDate: range.startDate,
+        endDate: range.endDate,
+      );
+
+      final dynamicsFuture = provider.getDailyDynamics(
+        startDate: range.startDate,
+        endDate: range.endDate,
+        type: _transactionType,
+      );
+
+      final results = await Future.wait([
+        summaryFuture,
+        periodSummaryFuture,
+        dynamicsFuture,
+      ]);
+
+      if (mounted) {
+        setState(() {
+          _categorySummary = results[0] as List<Map<String, dynamic>>;
+          _periodSummary = results[1] as Map<String, dynamic>;
+          _dailyDynamics = results[2] as List<Map<String, dynamic>>;
+          _isLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _pickCustomDateRange() async {
+    final now = DateTime.now();
+    final initialStart = _customStartDate ?? DateTime(now.year, now.month, 1);
+    final initialEnd = _customEndDate ?? now;
+
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: now.add(const Duration(days: 365)),
+      initialDateRange: DateTimeRange(
+        start: initialStart,
+        end: initialEnd,
+      ),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: AppColors.primary,
+              onPrimary: Colors.white,
+              surface: AppColors.darkSurface,
+              onSurface: AppColors.darkTextPrimary,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
 
-    if (mounted) {
+    if (picked != null) {
       setState(() {
-        _categorySummary = summary;
-        _isLoading = false;
+        _periodType = AnalyticsPeriodType.custom;
+        _customStartDate = DateTime(
+          picked.start.year,
+          picked.start.month,
+          picked.start.day,
+          0,
+          0,
+          0,
+        );
+        _customEndDate = DateTime(
+          picked.end.year,
+          picked.end.month,
+          picked.end.day,
+          23,
+          59,
+          59,
+        );
       });
+      _loadAnalytics();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<FinanceProvider>();
-    final now = DateTime.now();
-    final monthHeader = DateFormatter.formatMonthYear(now);
-    final netSavings = provider.monthlyIncome - provider.monthlyExpense;
+    final range = _getCurrentDateRange();
+    final isExpense = _transactionType == 'expense';
+    final totalExpense = (_periodSummary['expense'] as num?)?.toDouble() ?? 0.0;
+    final totalIncome = (_periodSummary['income'] as num?)?.toDouble() ?? 0.0;
+    final totalCount = (_periodSummary['count'] as num?)?.toInt() ?? 0;
+    final selectedTypeTotal = isExpense ? totalExpense : totalIncome;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Аналитика'),
       ),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            )
-          : RefreshIndicator(
-              onRefresh: () async {
-                await provider.refresh();
-                await _loadSummary();
+      body: RefreshIndicator(
+        onRefresh: () async {
+          final provider = context.read<FinanceProvider>();
+          await provider.refresh();
+          await _loadAnalytics();
+        },
+        color: AppColors.primary,
+        child: ListView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          children: [
+            // 1. Выбор периода и типа операции
+            AnalyticsPeriodSelector(
+              periodType: _periodType,
+              offset: _offset,
+              dateRange: range,
+              transactionType: _transactionType,
+              onPeriodTypeChanged: (newType) {
+                setState(() {
+                  _periodType = newType;
+                  _offset = 0;
+                });
+                _loadAnalytics();
               },
-              color: AppColors.primary,
-              child: ListView(
-                padding: const EdgeInsets.all(20),
-                children: [
-                  // Заголовок периода
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        monthHeader,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: AppColors.darkCard,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.darkBorder),
-                        ),
-                        child: const Text(
-                          'Текущий месяц',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.darkTextSecondary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Карточка финансового баланса месяца
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: AppColors.darkCard,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: AppColors.darkBorder),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Чистый остаток (Сальдо)',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: AppColors.darkTextSecondary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          CurrencyFormatter.format(netSavings, showSign: true),
-                          style: TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.5,
-                            color: netSavings >= 0
-                                ? AppColors.income
-                                : AppColors.expense,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Всего расходов',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.darkTextMuted,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    CurrencyFormatter.format(
-                                        provider.monthlyExpense),
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.expense,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Всего доходов',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.darkTextMuted,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    CurrencyFormatter.format(
-                                        provider.monthlyIncome),
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.income,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  const Text(
-                    'Расходы по категориям',
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.4,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  if (_categorySummary.isEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 24, vertical: 36),
-                      decoration: BoxDecoration(
-                        color: AppColors.darkCard,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: AppColors.darkBorder),
-                      ),
-                      child: const Center(
-                        child: Text(
-                          'В этом месяце еще не было расходов',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: AppColors.darkTextSecondary,
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    ..._categorySummary.map((item) {
-                      final name = item['categoryName'] as String;
-                      final icon = item['categoryIcon'] as String;
-                      final color = Color(item['categoryColor'] as int);
-                      final amount = item['totalAmount'] as double;
-                      final percent = provider.monthlyExpense > 0
-                          ? (amount / provider.monthlyExpense * 100).toStringAsFixed(1)
-                          : '0';
-
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  CircleAvatar(
-                                    radius: 16,
-                                    backgroundColor:
-                                        color.withValues(alpha: 0.2),
-                                    child: Icon(
-                                      IconHelper.getIcon(icon),
-                                      color: color,
-                                      size: 16,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      name,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 15,
-                                      ),
-                                    ),
-                                  ),
-                                  Text(
-                                    '$percent%',
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.darkTextSecondary,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    CurrencyFormatter.format(amount),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 15,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              LinearProgressIndicator(
-                                value: provider.monthlyExpense > 0
-                                    ? amount / provider.monthlyExpense
-                                    : 0,
-                                backgroundColor:
-                                    AppColors.darkBorder.withValues(alpha: 0.5),
-                                valueColor: AlwaysStoppedAnimation<Color>(color),
-                                borderRadius: BorderRadius.circular(4),
-                                minHeight: 6,
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }),
-                ],
-              ),
+              onOffsetChanged: (newOffset) {
+                setState(() {
+                  _offset = newOffset;
+                });
+                _loadAnalytics();
+              },
+              onTransactionTypeChanged: (newType) {
+                setState(() {
+                  _transactionType = newType;
+                });
+                _loadAnalytics();
+              },
+              onPickCustomRange: _pickCustomDateRange,
             ),
+
+            const SizedBox(height: 16),
+
+            // 2. Сводка за период (Сальдо, Доходы, Расходы)
+            AnalyticsSummaryCard(
+              totalExpense: totalExpense,
+              totalIncome: totalIncome,
+              totalCount: totalCount,
+              daysCount: range.daysCount,
+            ),
+
+            const SizedBox(height: 16),
+
+            // 3. Интерактивная диаграмма долей категорий
+            if (_isLoading) ...[
+              Container(
+                height: 240,
+                decoration: BoxDecoration(
+                  color: AppColors.darkCard,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: AppColors.darkBorder),
+                ),
+                child: const Center(
+                  child: CircularProgressIndicator(color: AppColors.primary),
+                ),
+              ),
+            ] else ...[
+              AnalyticsPieChart(
+                categorySummary: _categorySummary,
+                totalAmount: selectedTypeTotal,
+                transactionType: _transactionType,
+              ),
+            ],
+
+            const SizedBox(height: 16),
+
+            // 4. Гистограмма ежедневной динамики
+            if (!_isLoading && _dailyDynamics.isNotEmpty) ...[
+              AnalyticsBarChart(
+                dailyDynamics: _dailyDynamics,
+                transactionType: _transactionType,
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // 5. Рейтинг категорий с детализацией
+            if (!_isLoading) ...[
+              CategoryRankingList(
+                categorySummary: _categorySummary,
+                totalAmount: selectedTypeTotal,
+                startDate: range.startDate,
+                endDate: range.endDate,
+                transactionType: _transactionType,
+              ),
+            ],
+
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
     );
   }
 }

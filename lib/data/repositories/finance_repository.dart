@@ -252,10 +252,39 @@ class FinanceRepository {
     };
   }
 
-  /// Расходы по категориям за период (для PieChart и рейтингов)
-  Future<List<Map<String, dynamic>>> getCategoryExpensesSummary({
+  /// Сводка за произвольный период: суммарный расход, доход и количество транзакций
+  Future<Map<String, dynamic>> getPeriodSummary({
     required DateTime startDate,
     required DateTime endDate,
+  }) async {
+    final db = await _db;
+    final startStr = startDate.toIso8601String();
+    final endStr = endDate.toIso8601String();
+
+    final result = await db.rawQuery('''
+      SELECT 
+        SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as total_expense,
+        SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as total_income,
+        COUNT(id) as total_count
+      FROM transactions
+      WHERE is_deleted = 0 
+        AND date >= ? 
+        AND date <= ?
+    ''', [startStr, endStr]);
+
+    final row = result.first;
+    return {
+      'expense': (row['total_expense'] as num?)?.toDouble() ?? 0.0,
+      'income': (row['total_income'] as num?)?.toDouble() ?? 0.0,
+      'count': (row['total_count'] as num?)?.toInt() ?? 0,
+    };
+  }
+
+  /// Сводка по категориям за период (расходы или доходы)
+  Future<List<Map<String, dynamic>>> getCategorySummary({
+    required DateTime startDate,
+    required DateTime endDate,
+    String type = 'expense',
   }) async {
     final db = await _db;
     final startStr = startDate.toIso8601String();
@@ -267,10 +296,11 @@ class FinanceRepository {
         c.name as category_name,
         c.icon_name as category_icon,
         c.color_hex as category_color,
-        SUM(t.amount) as total_amount
+        SUM(t.amount) as total_amount,
+        COUNT(t.id) as transaction_count
       FROM transactions t
       JOIN categories c ON t.category_id = c.id
-      WHERE t.type = 'expense' 
+      WHERE t.type = ? 
         AND t.is_deleted = 0 
         AND t.date >= ? 
         AND t.date <= ?
@@ -278,13 +308,58 @@ class FinanceRepository {
       ORDER BY total_amount DESC
     ''';
 
-    final results = await db.rawQuery(query, [startStr, endStr]);
+    final results = await db.rawQuery(query, [type, startStr, endStr]);
     return results.map((row) {
       return {
         'categoryId': row['category_id'] as String,
         'categoryName': row['category_name'] as String,
         'categoryIcon': row['category_icon'] as String,
         'categoryColor': row['category_color'] as int,
+        'totalAmount': (row['total_amount'] as num).toDouble(),
+        'transactionCount': (row['transaction_count'] as num).toInt(),
+      };
+    }).toList();
+  }
+
+  /// Расходы по категориям за период (обратная совместимость)
+  Future<List<Map<String, dynamic>>> getCategoryExpensesSummary({
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    return getCategorySummary(
+      startDate: startDate,
+      endDate: endDate,
+      type: 'expense',
+    );
+  }
+
+  /// Ежедневная динамика сумм за период (для BarChart графиков)
+  Future<List<Map<String, dynamic>>> getDailyDynamics({
+    required DateTime startDate,
+    required DateTime endDate,
+    String type = 'expense',
+  }) async {
+    final db = await _db;
+    final startStr = startDate.toIso8601String();
+    final endStr = endDate.toIso8601String();
+
+    final query = '''
+      SELECT 
+        substr(t.date, 1, 10) as day_str,
+        SUM(t.amount) as total_amount
+      FROM transactions t
+      WHERE t.type = ?
+        AND t.is_deleted = 0
+        AND t.date >= ?
+        AND t.date <= ?
+      GROUP BY day_str
+      ORDER BY day_str ASC
+    ''';
+
+    final results = await db.rawQuery(query, [type, startStr, endStr]);
+    return results.map((row) {
+      return {
+        'date': row['day_str'] as String,
         'totalAmount': (row['total_amount'] as num).toDouble(),
       };
     }).toList();
