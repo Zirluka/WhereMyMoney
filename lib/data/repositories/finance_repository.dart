@@ -51,6 +51,25 @@ class FinanceRepository {
     );
   }
 
+  Future<bool> deleteAccount(String accountId) async {
+    final db = await _db;
+    // Проверяем, сколько активных счетов осталось
+    final accounts = await getAccounts();
+    if (accounts.length <= 1) {
+      // Не позволяем удалить единственный оставшийся счет
+      return false;
+    }
+
+    final now = DateTime.now().toIso8601String();
+    await db.update(
+      'accounts',
+      {'is_deleted': 1, 'updated_at': now},
+      where: 'id = ?',
+      whereArgs: [accountId],
+    );
+    return true;
+  }
+
   Future<double> getTotalBalance() async {
     final db = await _db;
     final result = await db.rawQuery(

@@ -237,6 +237,101 @@ class FinanceProvider extends ChangeNotifier {
     }
   }
 
+  /// Обновление существующего счета
+  Future<bool> updateAccount(Account account) async {
+    try {
+      await _repository.updateAccount(account);
+      await _refreshData();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Ошибка при обновлении счета: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Удаление счета (мягкое удаление)
+  Future<bool> deleteAccount(String accountId) async {
+    try {
+      final success = await _repository.deleteAccount(accountId);
+      if (!success) {
+        _error = 'Нельзя удалить единственный оставшийся счет';
+        notifyListeners();
+        return false;
+      }
+      if (_selectedAccount?.id == accountId) {
+        _selectedAccount = null;
+      }
+      await _refreshData();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Ошибка при удалении счета: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Быстрый перевод средств между своими счетами
+  Future<bool> transferBetweenAccounts({
+    required String sourceAccountId,
+    required String targetAccountId,
+    required double amount,
+    String? note,
+    DateTime? date,
+  }) async {
+    try {
+      if (sourceAccountId == targetAccountId) {
+        _error = 'Счет списания и зачисления не могут совпадать';
+        notifyListeners();
+        return false;
+      }
+      if (amount <= 0) {
+        _error = 'Сумма перевода должна быть больше нуля';
+        notifyListeners();
+        return false;
+      }
+
+      final now = date ?? DateTime.now();
+      // Получаем дефолтную категорию для переводов или первую доступную
+      final defaultCategory = _categories.isNotEmpty ? _categories.first.id : 'transfer';
+
+      final item = TransactionItem(
+        id: _uuid.v4(),
+        accountId: sourceAccountId,
+        categoryId: defaultCategory,
+        amount: amount,
+        type: 'transfer',
+        date: now,
+        note: note,
+        targetAccountId: targetAccountId,
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      await _repository.addTransaction(item);
+      await _refreshData();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Ошибка при выполнении перевода: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Получение истории транзакций по конкретному счету
+  Future<List<TransactionItem>> getTransactionsForAccount(
+    String accountId, {
+    int limit = 50,
+  }) async {
+    return await _repository.getTransactions(
+      accountId: accountId,
+      limit: limit,
+    );
+  }
+
   /// Принудительное обновление состояния
   Future<void> refresh() async {
     await _refreshData();

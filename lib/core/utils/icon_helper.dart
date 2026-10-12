@@ -22,6 +22,10 @@ class IconHelper {
     'trending_up': Icons.trending_up_rounded,
     'fastfood': Icons.fastfood_rounded,
     'category': Icons.category_rounded,
+    'wallet': Icons.wallet_rounded,
+    'currency_bitcoin': Icons.currency_bitcoin_rounded,
+    'euro': Icons.euro_rounded,
+    'security': Icons.security_rounded,
   };
 
   static IconData getIcon(String name) {
