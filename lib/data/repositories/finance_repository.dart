@@ -1,6 +1,8 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/utils/backup_service.dart';
 import '../database/app_database.dart';
+import '../database/initial_data.dart';
 import '../models/account.dart';
 import '../models/budget.dart';
 import '../models/category.dart';
@@ -560,5 +562,126 @@ class FinanceRepository {
       where: 'id = ?',
       whereArgs: [goalId],
     );
+  }
+
+  // ================= РЕЗЕРВНОЕ КОПИРОВАНИЕ И ЭКСПОРТ (ФАЗА 8) =================
+
+  /// Получение всех активных бюджетов
+  Future<List<Budget>> getAllBudgets() async {
+    final db = await _db;
+    final query = '''
+      SELECT 
+        b.*,
+        c.name as category_name,
+        c.icon_name as category_icon,
+        c.color_hex as category_color
+      FROM budgets b
+      JOIN categories c ON b.category_id = c.id
+      WHERE b.is_deleted = 0
+    ''';
+    final results = await db.rawQuery(query);
+    return results.map((row) => Budget.fromMap(row)).toList();
+  }
+
+  /// Сбор полного слепка базы данных для резервной копии
+  Future<BackupData> getAllDataForBackup() async {
+    final accounts = await getAccounts();
+    final categories = await getCategories();
+    final transactions = await getTransactions(); // Все транзакции без лимита
+    final budgets = await getAllBudgets();
+    final goals = await getSavingsGoals();
+
+    return BackupData(
+      accounts: accounts,
+      categories: categories,
+      transactions: transactions,
+      budgets: budgets,
+      goals: goals,
+      exportedAt: DateTime.now(),
+    );
+  }
+
+  /// Восстановление базы данных из резервной копии BackupData
+  Future<void> restoreFromBackupData(
+    BackupData backup, {
+    bool wipeExisting = true,
+  }) async {
+    final db = await _db;
+    await db.transaction((txn) async {
+      if (wipeExisting) {
+        // Очищаем текущие таблицы
+        await txn.delete('transactions');
+        await txn.delete('budgets');
+        await txn.delete('savings_goals');
+        await txn.delete('categories');
+        await txn.delete('accounts');
+      }
+
+      // Восстанавливаем счета
+      for (final account in backup.accounts) {
+        await txn.insert(
+          'accounts',
+          account.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+
+      // Восстанавливаем категории
+      for (final category in backup.categories) {
+        await txn.insert(
+          'categories',
+          category.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+
+      // Восстанавливаем транзакции
+      for (final transaction in backup.transactions) {
+        await txn.insert(
+          'transactions',
+          transaction.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+
+      // Восстанавливаем бюджеты
+      for (final budget in backup.budgets) {
+        await txn.insert(
+          'budgets',
+          budget.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+
+      // Восстанавливаем цели
+      for (final goal in backup.goals) {
+        await txn.insert(
+          'savings_goals',
+          goal.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+  }
+
+  /// Сброс базы данных до начального состояния (дефолтные счета и категории)
+  Future<void> resetDatabaseToDefaults() async {
+    final db = await _db;
+    await db.transaction((txn) async {
+      await txn.delete('transactions');
+      await txn.delete('budgets');
+      await txn.delete('savings_goals');
+      await txn.delete('categories');
+      await txn.delete('accounts');
+
+      final batch = txn.batch();
+      for (final account in InitialData.getDefaultAccounts()) {
+        batch.insert('accounts', account.toMap());
+      }
+      for (final category in InitialData.getDefaultCategories()) {
+        batch.insert('categories', category.toMap());
+      }
+      await batch.commit(noResult: true);
+    });
   }
 }

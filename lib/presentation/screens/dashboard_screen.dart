@@ -8,6 +8,7 @@ import '../widgets/balance_card.dart';
 import '../widgets/accounts_carousel.dart';
 import '../widgets/grouped_transactions_list.dart';
 import 'add_transaction_sheet.dart';
+import 'backup_and_settings_screen.dart';
 import 'qr_scanner_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
@@ -71,6 +72,15 @@ class DashboardScreen extends StatelessWidget {
             tooltip: 'Сканировать чек',
             icon: const Icon(Icons.qr_code_scanner_rounded, size: 24),
             onPressed: () => _scanReceiptQr(context),
+          ),
+          IconButton(
+            tooltip: 'Данные и бэкап',
+            icon: const Icon(Icons.settings_outlined, size: 24),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const BackupAndSettingsScreen()),
+              );
+            },
           ),
           const SizedBox(width: 8),
         ],

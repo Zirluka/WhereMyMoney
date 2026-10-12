@@ -1,5 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart' hide Category;
 import 'package:uuid/uuid.dart';
+import '../../core/utils/backup_service.dart';
 import '../../data/models/account.dart';
 import '../../data/models/budget.dart';
 import '../../data/models/category.dart';
@@ -473,6 +476,80 @@ class FinanceProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       _error = 'Ошибка удаления цели: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // ================= РЕЗЕРВНОЕ КОПИРОВАНИЕ И ЭКСПОРТ (ФАЗА 8) =================
+
+  /// Создание полной резервной копии базы данных (JSON)
+  Future<File?> exportBackupJson() async {
+    try {
+      final backup = await _repository.getAllDataForBackup();
+      final file = await BackupService.saveBackupToFile(backup);
+      return file;
+    } catch (e) {
+      _error = 'Ошибка создания резервной копии: $e';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Получение строки JSON бэкапа (для копирования в буфер обмена)
+  Future<String?> getBackupJsonString() async {
+    try {
+      final backup = await _repository.getAllDataForBackup();
+      return const JsonEncoder.withIndent('  ').convert(backup.toJson());
+    } catch (e) {
+      _error = 'Ошибка генерации бэкапа: $e';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Экспорт всех транзакций в Excel-совместимый CSV файл
+  Future<File?> exportCsvTransactions() async {
+    try {
+      final allTransactions = await _repository.getTransactions();
+      final file = await BackupService.saveCsvToFile(allTransactions);
+      return file;
+    } catch (e) {
+      _error = 'Ошибка экспорта CSV: $e';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Восстановление базы данных из строки JSON бэкапа
+  Future<bool> restoreFromJson(
+    String jsonString, {
+    bool wipeExisting = true,
+  }) async {
+    try {
+      final decoded = jsonDecode(jsonString) as Map<String, dynamic>;
+      final backup = BackupData.fromJson(decoded);
+      await _repository.restoreFromBackupData(backup, wipeExisting: wipeExisting);
+      await _refreshData();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Не удалось восстановить бэкап: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Сброс базы данных до начального состояния
+  Future<bool> resetDatabaseToDefaults() async {
+    try {
+      await _repository.resetDatabaseToDefaults();
+      _selectedAccount = null;
+      await _refreshData();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Ошибка сброса базы данных: $e';
       notifyListeners();
       return false;
     }
